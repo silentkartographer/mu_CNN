@@ -30,7 +30,7 @@ def find_common_nonzero_region(images, size=224):
 
 
 # Load the h5 file using h5py
-file_path = "h5_files\mu_500-600MeV_primE.h5"
+file_path = r"C:\Users\hutae\Downloads\mu_500-600MeV_primE.h5"
 with h5py.File(file_path, 'r') as file:
     eventid = file['hits']['eventID'][:]
 
@@ -38,7 +38,7 @@ with h5py.File(file_path, 'r') as file:
 
     for event_id in unique_event_ids:
         # select a few events
-        if event_id > 5:
+        if event_id > 20:
             break
 
         event_indices = eventid == event_id
@@ -48,7 +48,10 @@ with h5py.File(file_path, 'r') as file:
         q = file['hits']['q'][event_indices]
 
         # Normalize q
-        normalized_q = (q - np.min(q)) / (np.max(q) - np.min(q))
+        if (np.max(q) - np.min(q)) == 0:
+            normalized_q = (q - np.min(q))
+        else:
+            normalized_q = (q - np.min(q)) / (np.max(q) - np.min(q))
 
         # Create a 2D grid for the XY View
         resolution = 50
@@ -98,6 +101,7 @@ with h5py.File(file_path, 'r') as file:
         # # Crop and resize all three views to 224x224, using cv2 so it is "image-like"
         cropped_images_final = []
         for img in cropped_images:
+            print(img)
             cropped_img = img[start_y:end_y, start_x:end_x]
             cropped_img_resized = cv2.resize(cropped_img, (224, 224), interpolation=cv2.INTER_AREA)
             cropped_images_final.append(cropped_img_resized)

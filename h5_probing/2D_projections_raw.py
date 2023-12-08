@@ -1,4 +1,4 @@
-#plot 2D projections
+#plot 2D projections, raw file
 
 import numpy as np
 import matplotlib.pyplot as plt

@@ -3,16 +3,18 @@ import matplotlib.pyplot as plt
 import h5py
 import cv2
 
-def crop_nonzero_region(image, size=224):
+def find_common_nonzero_region(images, size=224):
     # Get indices of non-zero elements; find where the values in the image are non_zero
-    non_zero_indices = np.argwhere(image > 0)
+    non_zero_indices = [np.argwhere(image > 0) if (image > 0).any() else None for image in images]
 
-    if len(non_zero_indices) == 0:
-        return None  # Return None if no non-zero elements found
-
-    # Get the bounding box around non-zero elements
-    min_y, min_x = np.min(non_zero_indices, axis=0)
-    max_y, max_x = np.max(non_zero_indices, axis=0)
+    # Check if any image has no non-zero values; # Get the bounding box around non-zero elements
+    if any(indices is None for indices in non_zero_indices):
+        min_y = min_x = max_y = max_x = 0
+    else:
+        min_y = min(np.min(indices[:, 0]) for indices in non_zero_indices)
+        min_x = min(np.min(indices[:, 1]) for indices in non_zero_indices)
+        max_y = max(np.max(indices[:, 0]) for indices in non_zero_indices)
+        max_x = max(np.max(indices[:, 1]) for indices in non_zero_indices)
 
     # Calculate center of the bounding box
     center_x = (max_x + min_x) // 2
@@ -21,13 +23,14 @@ def crop_nonzero_region(image, size=224):
     # Calculate the cropping bounds
     start_x = max(0, center_x - size // 2)
     start_y = max(0, center_y - size // 2)
-    end_x = min(image.shape[1], start_x + size)
-    end_y = min(image.shape[0], start_y + size)
+    end_x = min(images[0].shape[1], start_x + size)
+    end_y = min(images[0].shape[0], start_y + size)
 
-    return image[start_y:end_y, start_x:end_x]
+    return start_x, start_y, end_x, end_y
+
 
 # Load the h5 file using h5py
-file_path = r"C:\Users\hutae\Downloads\mu_500-600MeV_primE.h5"
+file_path = "h5_files\mu_500-600MeV_primE.h5"
 with h5py.File(file_path, 'r') as file:
     eventid = file['hits']['eventID'][:]
 
@@ -48,23 +51,20 @@ with h5py.File(file_path, 'r') as file:
         normalized_q = (q - np.min(q)) / (np.max(q) - np.min(q))
 
         # Create a 2D grid for the XY View
-        resolution = 50  # we can try different resolutions
-        x_range_xy = np.linspace(min(x), max(x), resolution) # generate x axis for xy values, the higher the resolution, the less spacing between the points
-        y_range_xy = np.linspace(min(y), max(y), resolution) # generate y axis for xy values, the higher the resolution, the less spacing between the points
-        xx_xy, yy_xy = np.meshgrid(x_range_xy, y_range_xy) # create a matrix (or a np array) (a grid with x, y coordinates) from the above variables
+        resolution = 50
+        x_range_xy = np.linspace(min(x), max(x), resolution) # # generate x axis for xy values, the higher the resolution, the less spacing between the points
+        y_range_xy = np.linspace(min(y), max(y), resolution) # # generate y axis for xy values, the higher the resolution, the less spacing between the points
+        xx_xy, yy_xy = np.meshgrid(x_range_xy, y_range_xy) # # create a matrix (or a np array) (a grid with x, y coordinates) from the above variables
 
         # Interpolate normalized_q values for XY View
-        image_xy = np.zeros_like(xx_xy) # create a np array of zeros that match xx_yy
+        image_xy = np.zeros_like(xx_xy)
         for i in range(len(x)):
             # for each x and y coordinate, find the index of the entry in x_range_xy and y_range_xy that has the smallest difference between it and x, y values. Then the value from nnormalized_q is assigned to this x,y position in image_xy
             xi = np.argmin(np.abs(x_range_xy - x[i]))
             yi = np.argmin(np.abs(y_range_xy - y[i]))
             image_xy[yi, xi] = normalized_q[i]
 
-        # crop to a none-zero region as defined above
-        cropped_xy = crop_nonzero_region(image_xy)
-
-        # repeat for other views
+        # repeat for the 2 other views
 
         # Create a 2D grid for the XZ View
         x_range_xz = np.linspace(min(x), max(x), resolution)
@@ -78,8 +78,6 @@ with h5py.File(file_path, 'r') as file:
             zi = np.argmin(np.abs(z_range_xz - z[i]))
             image_xz[zi, xi] = normalized_q[i]
 
-        cropped_xz = crop_nonzero_region(image_xz)
-
         # Create a 2D grid for the ZY View
         y_range_zy = np.linspace(min(y), max(y), resolution)
         z_range_zy = np.linspace(min(z), max(z), resolution)
@@ -92,35 +90,26 @@ with h5py.File(file_path, 'r') as file:
             zi = np.argmin(np.abs(z_range_zy - z[i]))
             image_zy[zi, yi] = normalized_q[i]
 
-        cropped_zy = crop_nonzero_region(image_zy)
+        cropped_images = [image_xy, image_xz, image_zy]
 
-        # Crop and resize all three views to 224x224, using cv2 so it is "image-like"
-        cropped_images = []
-        for img in [cropped_xy, cropped_xz, cropped_zy]:
-            if img is not None:
-                cropped_img = cv2.resize(img, (224, 224), interpolation=cv2.INTER_AREA)
-                cropped_images.append(cropped_img)
-            else:
-                # If the view has no non-zero pixels, append a blank image
-                cropped_images.append(np.zeros((224, 224)))
+        # Find the common non-zero region for all cropped images
+        start_x, start_y, end_x, end_y = find_common_nonzero_region(cropped_images)
 
-        # Plotting all three views
+        # # Crop and resize all three views to 224x224, using cv2 so it is "image-like"
+        cropped_images_final = []
+        for img in cropped_images:
+            cropped_img = img[start_y:end_y, start_x:end_x]
+            cropped_img_resized = cv2.resize(cropped_img, (224, 224), interpolation=cv2.INTER_AREA)
+            cropped_images_final.append(cropped_img_resized)
+
+        # Plotting all three aligned views
         fig, axes = plt.subplots(1, 3, figsize=(15, 5))
 
-        axes[0].imshow(cropped_images[0], cmap='viridis')
-        axes[0].set_xlabel('X-axis')
-        axes[0].set_ylabel('Y-axis')
-        axes[0].set_title('XY View (bottom view)')
-
-        axes[1].imshow(cropped_images[1], cmap='viridis')
-        axes[1].set_xlabel('X-axis')
-        axes[1].set_ylabel('Z-axis')
-        axes[1].set_title('XZ View (a side view)')
-
-        axes[2].imshow(cropped_images[2], cmap='viridis')
-        axes[2].set_xlabel('Y-axis')
-        axes[2].set_ylabel('Z-axis')
-        axes[2].set_title('ZY View (a side view)')
+        for i, ax in enumerate(axes):
+            ax.imshow(cropped_images_final[i], cmap='viridis')
+            ax.set_xlabel('X-axis' if i == 0 else ('Y-axis' if i == 2 else 'Z-axis'))
+            ax.set_ylabel('Y-axis' if i == 0 else 'Z-axis')
+            ax.set_title(['XY View (bottom view)', 'XZ View (a side view)', 'ZY View (a side view)'][i])
 
         plt.tight_layout()
         plt.show()

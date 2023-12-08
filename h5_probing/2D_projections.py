@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 import h5py
 
 # Load the h5 file using h5py
-file_path = r'C:\Users\Hilary\Downloads\mu_500-600MeV_primE.h5'
+file_path = 'h5_files\mu_500-600MeV_primE.h5'
 with h5py.File(file_path, 'r') as file:
     eventid = file['hits']['eventID'][:]
     
